@@ -100,7 +100,8 @@ So, we collect all the green pages and allocate phyiscal memory for them.
 This allocated memory is called the "physical page pool.
 
 In a real game, the physical page pool might look like this.
-![physical page pool](/images/2025-08-08-virtual-shadow-map/VSM_Page3.png)
+![physical page pool](/images/2025-08-08-virtual-shadow-map/PhysicalPagePool.png)
+<br/><br/>
 
 if we have a maximum of 1024 pages, we allocate 128 × 8 pages, resulting in a physical page pool with a size of 16,384 × 1,024 pixels.  
 (We won't get into the details of how the width and height are determined here.)  
@@ -109,3 +110,37 @@ If the scene is large and complex, with a wide range of depth values across scre
 In this case, you might see an error like:  
 _"Virtual Shadow Map Page Pool overflow (%d page allocations were not served), this will produce visual artifacts (missing shadows). Increase the page pool limit or reduce the resolution bias to avoid this."_  
 When this happens, any pages beyond the limit are not rendered.
+
+# Virtual Page and Phyiscal Page
+Whether or not a page in the 16K shadow map is actually rendered isn't fixed. In fact, the shadow map texture itself doesn't physically exist in memory—it only exists in theory.  
+That's why these are called "virtual pages."
+
+In contrast, physical pages are real blocks of memory allocated in the physical page pool. That's why they're called "physical pages." Each physical page is mapped to a virtual page, and this mapping information is stored in the PhysicalPageMetaData.
+
+# BuildPageAllocation
+Before running the shadow depth pass-which actually writes depth values into the shadow map- all used virtual pages must be mapped to physical pages, and the PhysicalPageMetaData must be set up as well.  
+All of this happens just before the shadow pass, in a step called the BuildPageAllocation pass.
+The steps are as follows:
+- Iterate over the depth buffer and check which virtual pages each pixel uses.
+- Mark those virtual pages as used, map them to physical pages, and store the mapping in PhysicalPageMetaData.
+- During the shadow pass, look up the virtual page for each pixel, use PhysicalPageMetaData to find the corresponding physical page, and write the depth value to it.
+- During the lighting pass, look up the virtual page for each pixel, use PhysicalPageMetaData to find the corresponding physical page, and retrieve the depth value from it, calucate occlusion.
+
+# Clipmap
+![clipmap](/images/2025-08-08-virtual-shadow-map/Clipmap.png)
+*reference : https://dev.epicgames.com/documentation/en-us/unreal-engine/virtual-shadow-maps-in-unreal-engine*
+<br/><br/>
+
+I assumed that we only have a single 16K shadow map, but in reality, we usually need multiple shadow maps.
+If the scene is large, even a 16K VSM isn't enough to cover the entire range of directional light.  
+To solve this, a directional light uses multiple VSMs, each covering a different distance from the camera.  
+This technique is called a "clipmap".  
+For example, the level 1 clipmap covers the range from 0 to 2¹ units, level 2 covers from 2¹ to 2² units, and so on.  
+By default, Unreal Engine 5 uses clipmap levels 6 through 22, meaning level 6 covers 0 to 2⁶ units, level 7 covers 2⁶ to 2⁷, and so on.
+
+# Next Post
+Int Virtual Shadow Map Part 2, we'll take a closer look at the "BuildPageAllocation" render pass and analyze it in detail.
+
+# Reference
+https://zhuanlan.zhihu.com/p/489550318
+https://dev.epicgames.com/documentation/en-us/unreal-engine/virtual-shadow-maps-in-unreal-engine
